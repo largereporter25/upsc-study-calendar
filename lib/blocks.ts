@@ -65,8 +65,8 @@ export const MILESTONES = {
   notification: '2027-01-13',
 };
 
-/** Journey start for the Ascent — first day tracked in this app. */
-export const JOURNEY_START = '2026-08-21';
+/** Journey start for the Ascent — first day of logged preparation. */
+export const JOURNEY_START = '2026-07-28';
 
 export function fmtHours(minutes: number): string {
   const h = Math.floor(minutes / 60);

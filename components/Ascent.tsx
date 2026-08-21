@@ -1,19 +1,19 @@
 'use client';
 
-import { BLOCKS, BlockId } from '@/lib/blocks';
-import { blockFraction } from '@/lib/stats';
+import { BLOCKS, BlockId, JOURNEY_START } from '@/lib/blocks';
+import { Sentinel, Weather, blockFraction } from '@/lib/stats';
 
 /**
  * The Ascent — five climbers roped together on one mountain.
  * X-progress = share of the block's total required hours (start → Prelims).
- * The hollow ring is the pace marker: where a climber should be today.
+ * Hollow markers = projected position on Prelims day at the current 14-day pace.
+ * The sky reacts to the last week of work; the CSAT rope frays when neglected.
  */
 
 const W = 1000;
 const H = 340;
 const BASE_Y = 296;
 
-/** The route: base camp (left) to summit (right). */
 const ROUTE: [number, number][] = [
   [52, BASE_Y],
   [160, 268],
@@ -63,23 +63,122 @@ const CAMPS: { f: number; label: string }[] = [
   { f: 0.75, label: 'CAMP III' },
 ];
 
+const BASE_LABEL = `BASE · ${new Date(JOURNEY_START + 'T00:00:00')
+  .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  .toUpperCase()
+  .replace(/,/g, '')}`;
+
+/* ---------- weather glyphs ---------- */
+
+function Cloud({ x, y, s = 1, tone, drift }: { x: number; y: number; s?: number; tone: string; drift?: boolean }) {
+  return (
+    <g className={drift ? 'wx-drift' : undefined} style={{ ['--wx-x' as string]: `${x}px` }}>
+      <g transform={`translate(${x} ${y}) scale(${s})`} fill={tone}>
+        <ellipse cx="0" cy="0" rx="26" ry="11" />
+        <ellipse cx="-14" cy="-7" rx="14" ry="9" />
+        <ellipse cx="12" cy="-6" rx="12" ry="8" />
+      </g>
+    </g>
+  );
+}
+
+function Sky({ weather }: { weather: Weather }) {
+  const k = weather.kind;
+  if (k === 'radiant' || k === 'clear') {
+    const r = k === 'radiant' ? 15 : 10;
+    return (
+      <g>
+        <circle cx={140} cy={84} r={r} fill="none" stroke="var(--c-gs-dynamic)" strokeWidth="2" />
+        {Array.from({ length: 8 }, (_, i) => {
+          const a = (i * Math.PI) / 4;
+          const r1 = r + 6;
+          const r2 = r + (k === 'radiant' ? 14 : 10);
+          return (
+            <line
+              key={i}
+              x1={140 + Math.cos(a) * r1}
+              y1={84 + Math.sin(a) * r1}
+              x2={140 + Math.cos(a) * r2}
+              y2={84 + Math.sin(a) * r2}
+              stroke="var(--c-gs-dynamic)"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          );
+        })}
+        {k === 'radiant' && (
+          <circle cx={140} cy={84} r={26} fill="none" stroke="var(--c-gs-dynamic)" strokeWidth="1" strokeDasharray="2 5" opacity="0.6" />
+        )}
+      </g>
+    );
+  }
+  if (k === 'clouds') {
+    return (
+      <g opacity="0.8">
+        <Cloud x={150} y={84} tone="var(--color-text-faint)" drift />
+        <Cloud x={250} y={64} s={0.7} tone="var(--color-text-faint)" />
+      </g>
+    );
+  }
+  if (k === 'overcast') {
+    return (
+      <g opacity="0.9">
+        <Cloud x={140} y={78} s={1.1} tone="var(--color-text-faint)" drift />
+        <Cloud x={252} y={60} s={0.8} tone="var(--color-text-faint)" />
+        <Cloud x={356} y={86} s={0.9} tone="var(--color-text-faint)" drift />
+        <line x1={92} y1={112} x2={300} y2={112} stroke="var(--color-text-faint)" strokeWidth="1.5" opacity="0.5" />
+        <line x1={140} y1={122} x2={392} y2={122} stroke="var(--color-text-faint)" strokeWidth="1.5" opacity="0.35" />
+      </g>
+    );
+  }
+  // storm
+  return (
+    <g>
+      <Cloud x={160} y={72} s={1.2} tone="var(--color-text-muted)" drift />
+      <Cloud x={280} y={58} s={0.9} tone="var(--color-text-muted)" />
+      {Array.from({ length: 7 }, (_, i) => (
+        <line
+          key={i}
+          className="wx-rain"
+          x1={118 + i * 30}
+          y1={96}
+          x2={110 + i * 30}
+          y2={118}
+          stroke="var(--c-gs-static)"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          style={{ animationDelay: `${(i % 3) * 0.4}s` }}
+        />
+      ))}
+      <polygon
+        points="238,80 226,104 236,104 222,132 246,102 236,102 250,80"
+        fill="var(--color-accent)"
+        className="wx-flash"
+      />
+    </g>
+  );
+}
+
+/* ---------- component ---------- */
+
 interface Props {
   cumulative: Record<BlockId, number>;
   targets: Record<BlockId, number>;
   pace: number;
+  weather: Weather;
+  projections: Record<BlockId, number>;
+  csat: Sentinel;
 }
 
-export default function Ascent({ cumulative, targets, pace }: Props) {
+export default function Ascent({ cumulative, targets, pace, weather, projections, csat }: Props) {
   const routeStr = ROUTE.map((p) => p.join(',')).join(' ');
   const silhouette = `${routeStr} ${ROUTE[ROUTE.length - 1][0]},${BASE_Y} 52,${BASE_Y}`;
 
-  // Climbers, sorted so the rope drapes from trailing to leading.
   const climbers = BLOCKS.map((b) => ({
     block: b,
     f: blockFraction(cumulative, targets, b.id),
   })).sort((a, b) => a.f - b.f);
 
-  // Stagger climbers that share (almost) the same spot so all five stay visible.
   const placed = climbers.map((c, i) => {
     const [x, y] = pointAt(c.f);
     let bump = 0;
@@ -92,39 +191,32 @@ export default function Ascent({ cumulative, targets, pace }: Props) {
   const ropeStr = placed.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
   const [paceX, paceY] = pointAt(pace);
   const summit = ROUTE[ROUTE.length - 1];
+  const csatClimber = placed.find((c) => c.block.id === 'csat');
 
   return (
     <svg
       className="ascent-svg"
       viewBox={`0 0 ${W} ${H}`}
       role="img"
-      aria-label="Mountain chart showing each study block's progress toward the total hours needed by Prelims 2027"
+      aria-label={`Mountain chart of study progress toward Prelims 2027. Weather: ${weather.label}. Hollow markers show projected positions at the current pace.`}
     >
       {/* precision grid */}
       {Array.from({ length: 9 }, (_, i) => {
         const x = 52 + ((900 - 52) * (i + 1)) / 10;
         return (
-          <line
-            key={i}
-            x1={x}
-            y1={40}
-            x2={x}
-            y2={BASE_Y}
-            stroke="var(--color-divider)"
-            strokeWidth="1"
-          />
+          <line key={i} x1={x} y1={40} x2={x} y2={BASE_Y} stroke="var(--color-divider)" strokeWidth="1" />
         );
       })}
 
+      {/* weather */}
+      <Sky weather={weather} />
+      <text x={52} y={54} fontSize="10" fontWeight="700" letterSpacing="1.2" fill="var(--color-text-muted)">
+        {weather.label.toUpperCase()}
+      </text>
+
       {/* mountain silhouette */}
       <polygon points={silhouette} fill="var(--color-surface-offset)" opacity="0.85" />
-      <polyline
-        points={routeStr}
-        fill="none"
-        stroke="var(--color-border)"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
+      <polyline points={routeStr} fill="none" stroke="var(--color-border)" strokeWidth="2" strokeLinejoin="round" />
 
       {/* baseline */}
       <line x1={40} y1={BASE_Y} x2={960} y2={BASE_Y} stroke="var(--color-text)" strokeWidth="1.5" />
@@ -135,15 +227,7 @@ export default function Ascent({ cumulative, targets, pace }: Props) {
         return (
           <g key={c.label}>
             <line x1={x} y1={y} x2={x} y2={y - 12} stroke="var(--color-text-faint)" strokeWidth="1.5" />
-            <text
-              x={x}
-              y={y - 18}
-              textAnchor="middle"
-              fontSize="10"
-              fontWeight="600"
-              letterSpacing="1"
-              fill="var(--color-text-faint)"
-            >
+            <text x={x} y={y - 18} textAnchor="middle" fontSize="10" fontWeight="600" letterSpacing="1" fill="var(--color-text-faint)">
               {c.label}
             </text>
           </g>
@@ -152,59 +236,25 @@ export default function Ascent({ cumulative, targets, pace }: Props) {
 
       {/* base camp */}
       <text x={52} y={BASE_Y + 36} fontSize="10" fontWeight="600" letterSpacing="1" fill="var(--color-text-muted)">
-        BASE · 21 AUG 2026
+        {BASE_LABEL}
       </text>
 
       {/* summit flag */}
       <g>
         <line x1={summit[0]} y1={summit[1]} x2={summit[0]} y2={summit[1] - 26} stroke="var(--color-text)" strokeWidth="2" />
-        <path
-          d={`M ${summit[0]} ${summit[1] - 26} l 20 5 l -20 5 Z`}
-          fill="var(--color-accent)"
-        />
-        <text
-          x={summit[0] + 6}
-          y={summit[1] + 16}
-          fontSize="11"
-          fontWeight="700"
-          letterSpacing="1"
-          fill="var(--color-text)"
-        >
+        <path d={`M ${summit[0]} ${summit[1] - 26} l 20 5 l -20 5 Z`} fill="var(--color-accent)" />
+        <text x={summit[0] + 6} y={summit[1] + 16} fontSize="11" fontWeight="700" letterSpacing="1" fill="var(--color-text)">
           AIR 1
         </text>
-        <text
-          x={summit[0] + 6}
-          y={summit[1] + 30}
-          fontSize="9.5"
-          fontWeight="600"
-          letterSpacing="0.5"
-          fill="var(--color-text-muted)"
-        >
+        <text x={summit[0] + 6} y={summit[1] + 30} fontSize="9.5" fontWeight="600" letterSpacing="0.5" fill="var(--color-text-muted)">
           23 MAY 2027
         </text>
       </g>
 
-      {/* pace marker — where a climber should be today */}
+      {/* pace marker */}
       <g>
-        <line
-          x1={paceX}
-          y1={paceY}
-          x2={paceX}
-          y2={BASE_Y}
-          stroke="var(--color-accent)"
-          strokeWidth="1.2"
-          strokeDasharray="3 4"
-          opacity="0.7"
-        />
-        <circle
-          cx={paceX}
-          cy={paceY}
-          r="8"
-          fill="none"
-          stroke="var(--color-accent)"
-          strokeWidth="1.6"
-          strokeDasharray="2.5 3"
-        />
+        <line x1={paceX} y1={paceY} x2={paceX} y2={BASE_Y} stroke="var(--color-accent)" strokeWidth="1.2" strokeDasharray="3 4" opacity="0.7" />
+        <circle cx={paceX} cy={paceY} r="8" fill="none" stroke="var(--color-accent)" strokeWidth="1.6" strokeDasharray="2.5 3" />
         <text
           x={Math.min(Math.max(paceX, 96), 904)}
           y={BASE_Y + 20}
@@ -218,30 +268,54 @@ export default function Ascent({ cumulative, targets, pace }: Props) {
         </text>
       </g>
 
+      {/* summit projections — hollow markers at the current 14-day pace */}
+      {placed.map((c) => {
+        const pf = projections[c.block.id];
+        if (pf <= c.f + 0.008) return null;
+        const [px, py] = pointAt(pf);
+        return (
+          <g key={`proj-${c.block.id}`} opacity="0.85">
+            <line
+              x1={c.x}
+              y1={c.y}
+              x2={px}
+              y2={py}
+              stroke={`var(${c.block.colorVar})`}
+              strokeWidth="1"
+              strokeDasharray="1.5 4"
+              opacity="0.55"
+            />
+            <circle cx={px} cy={py} r="4.5" fill="var(--color-surface)" stroke={`var(${c.block.colorVar})`} strokeWidth="1.6" strokeDasharray="2 2" />
+            <title>{`${c.block.label}: projected ${(pf * 100).toFixed(0)}% of required hours by Prelims at the current 14-day pace`}</title>
+          </g>
+        );
+      })}
+
       {/* the rope */}
-      <polyline
-        points={ropeStr}
-        fill="none"
-        stroke="var(--color-text-muted)"
-        strokeWidth="1.2"
-        strokeDasharray="1.5 3"
-        opacity="0.9"
-      />
+      <polyline points={ropeStr} fill="none" stroke="var(--color-text-muted)" strokeWidth="1.2" strokeDasharray="1.5 3" opacity="0.9" />
+
+      {/* CSAT rope fray warning */}
+      {csat.level !== 'ok' && csatClimber && (
+        <g>
+          <circle
+            cx={csatClimber.x}
+            cy={csatClimber.y}
+            r="12"
+            fill="none"
+            stroke="var(--color-accent)"
+            strokeWidth="1.6"
+            strokeDasharray="3 3"
+            className="halo-pulse"
+          />
+          <title>{`CSAT rope fraying — ${csat.daysSince} days without CSAT practice`}</title>
+        </g>
+      )}
 
       {/* climbers */}
       {placed.map((c) => (
         <g key={c.block.id}>
-          <circle
-            cx={c.x}
-            cy={c.y}
-            r="6.5"
-            fill={`var(${c.block.colorVar})`}
-            stroke="var(--color-surface)"
-            strokeWidth="2"
-          />
-          <title>
-            {`${c.block.label}: ${(c.f * 100).toFixed(1)}% of the required hours climbed`}
-          </title>
+          <circle cx={c.x} cy={c.y} r="6.5" fill={`var(${c.block.colorVar})`} stroke="var(--color-surface)" strokeWidth="2" />
+          <title>{`${c.block.label}: ${(c.f * 100).toFixed(1)}% of the required hours climbed`}</title>
         </g>
       ))}
     </svg>

@@ -14,11 +14,14 @@ import {
 import {
   LogMap,
   Ramp,
+  csatSentinel,
   cumulativeByBlock,
   dayTotal,
   paceFraction,
+  projectedFraction,
   rampTargetMinutes,
   streak,
+  weather,
   weekAvgMinutes,
 } from '@/lib/stats';
 import Ascent from './Ascent';
@@ -26,6 +29,8 @@ import YearView from './YearView';
 import MonthView from './MonthView';
 import DayView from './DayView';
 import FocusTimer from './FocusTimer';
+import RevisionQueue from './RevisionQueue';
+import Soundscape from './Soundscape';
 
 type ViewLevel = 'year' | 'month' | 'day';
 
@@ -153,6 +158,15 @@ export default function App() {
   const todayTarget = rampTargetMinutes(ramp, today);
   const currentStreak = useMemo(() => streak(logs, today), [logs, today]);
   const weekAvg = useMemo(() => weekAvgMinutes(logs, today), [logs, today]);
+  const wx = useMemo(() => weather(logs, ramp, today), [logs, ramp, today]);
+  const projections = useMemo(() => {
+    const out = {} as Record<BlockId, number>;
+    for (const b of BLOCK_IDS) {
+      out[b] = projectedFraction(logs, cumulative, targets, b, today);
+    }
+    return out;
+  }, [logs, cumulative, targets, today]);
+  const csat = useMemo(() => csatSentinel(logs, today), [logs, today]);
   const totalMinutes = BLOCK_IDS.reduce((s, b) => s + cumulative[b], 0);
   const daysToPrelims = daysBetween(today, MILESTONES.prelims);
   const daysToMains = daysBetween(today, MILESTONES.mains);
@@ -253,7 +267,14 @@ export default function App() {
             Summit · AIR 1 · 23 May 2027 — route is {Math.round(pace * 100)}% elapsed
           </p>
         </div>
-        <Ascent cumulative={cumulative} targets={targets} pace={pace} />
+        <Ascent
+          cumulative={cumulative}
+          targets={targets}
+          pace={pace}
+          weather={wx}
+          projections={projections}
+          csat={csat}
+        />
         <div className="legend">
           {BLOCKS.map((b) => (
             <div className="legend-item" key={b.id}>
@@ -262,8 +283,31 @@ export default function App() {
               <span className="num">{fmtHours(cumulative[b.id])}</span>
             </div>
           ))}
+          <div className="legend-item">
+            <span
+              className="legend-swatch"
+              style={{
+                background: 'transparent',
+                border: '1.5px dashed var(--color-text-muted)',
+              }}
+            />
+            projected on 23 May at current 14-day pace
+          </div>
         </div>
       </section>
+
+      {csat.level !== 'ok' && (
+        <div className="sentinel-strip" role="status">
+          <strong>CSAT Sentinel</strong>
+          <span>
+            {csat.daysSince} days without CSAT — your weekly insurance is{' '}
+            {csat.level === 'alert' ? 'fraying. Even 30 minutes re-ropes it.' : 'due this week.'}
+          </span>
+          <button className="sentinel-action" onClick={() => setTimerBlock('csat')}>
+            Start CSAT focus
+          </button>
+        </div>
+      )}
 
       <section className="stats-strip" aria-label="Key stats">
         <div
@@ -287,6 +331,8 @@ export default function App() {
           <div className="stat-label micro">Total climbed</div>
         </div>
       </section>
+
+      <RevisionQueue today={today} />
 
       <section className="cal-frame" ref={frameRef}>
         <div className="cal-toolbar">
@@ -393,6 +439,8 @@ export default function App() {
           onLogged={creditSession}
         />
       )}
+
+      <Soundscape />
     </div>
   );
 }
