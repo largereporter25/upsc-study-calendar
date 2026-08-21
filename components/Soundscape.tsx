@@ -39,6 +39,7 @@ const STATIONS: Station[] = [
 export default function Soundscape() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
+  const [videoOpen, setVideoOpen] = useState(false);
   const [volume, setVolume] = useState(0.5);
 
   const ctxRef = useRef<AudioContext | null>(null);
@@ -147,10 +148,12 @@ export default function Soundscape() {
     if (active === s.id) {
       // toggle off
       setActive(null);
+      setVideoOpen(false);
       stopSynth();
       return;
     }
     setActive(s.id);
+    setVideoOpen(false);
     if (s.kind === 'synth') {
       if (s.id === 'tanpura') startTanpura();
       else startRain();
@@ -170,58 +173,73 @@ export default function Soundscape() {
 
   return (
     <div className={`sound-dock${open ? ' open' : ''}`}>
-      {open && (
-        <div className="sound-card">
-          <div className="sound-head">
-            <span className="micro">Soundscape · Indian Classical</span>
-            <button className="sound-min" onClick={() => setOpen(false)} aria-label="Minimise soundscape">
-              —
+      {/* The card stays mounted so the stream keeps playing when minimised. */}
+      <div className={`sound-card${open ? '' : ' is-hidden'}`}>
+        <div className="sound-head">
+          <span className="micro">Soundscape · Indian Classical</span>
+          <button className="sound-min" onClick={() => setOpen(false)} aria-label="Minimise soundscape (music keeps playing)">
+            —
+          </button>
+        </div>
+        <div className="sound-stations">
+          {STATIONS.map((s) => (
+            <button
+              key={s.id}
+              className="sound-chip"
+              aria-pressed={active === s.id}
+              onClick={() => select(s)}
+              title={s.detail}
+            >
+              <strong>{s.label}</strong>
+              <span>{s.detail}</span>
             </button>
-          </div>
-          <div className="sound-stations">
-            {STATIONS.map((s) => (
-              <button
-                key={s.id}
-                className="sound-chip"
-                aria-pressed={active === s.id}
-                onClick={() => select(s)}
-                title={s.detail}
-              >
-                <strong>{s.label}</strong>
-                <span>{s.detail}</span>
+          ))}
+        </div>
+        {station?.kind === 'yt' && (
+          <div className="sound-player">
+            <div className="sound-now">
+              <span className="sound-eq" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="sound-now-label">
+                {station.label} · {station.detail}
+              </span>
+              <button className="sound-video-toggle" onClick={() => setVideoOpen((v) => !v)}>
+                {videoOpen ? 'Hide video' : 'Show video'}
               </button>
-            ))}
-          </div>
-          {station?.kind === 'yt' && (
+            </div>
             <iframe
               key={station.videoId}
-              className="sound-frame"
+              className={`sound-frame${videoOpen ? '' : ' collapsed'}`}
               src={`https://www.youtube-nocookie.com/embed/${station.videoId}?autoplay=1&rel=0`}
               title={`${station.label} — ${station.detail}`}
               allow="autoplay; encrypted-media; picture-in-picture"
               allowFullScreen
             />
-          )}
-          {station?.kind === 'synth' && (
-            <div className="sound-synth">
-              <span className="micro">{station.label} playing</span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                aria-label="Volume"
-              />
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+        {station?.kind === 'synth' && (
+          <div className="sound-synth">
+            <span className="micro">{station.label} playing</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              aria-label="Volume"
+            />
+          </div>
+        )}
+      </div>
       <button
         className={`sound-toggle${active ? ' live' : ''}`}
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? 'Hide soundscape' : 'Show soundscape'}
+        aria-expanded={open}
+        aria-label={open ? 'Minimise soundscape' : 'Open soundscape'}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M4 10v4" />
