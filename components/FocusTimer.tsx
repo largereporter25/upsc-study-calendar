@@ -17,28 +17,36 @@ interface Props {
   onLogged: (date: string, block: BlockId, minutes: number) => void;
 }
 
-function beep(times = 2) {
+/**
+ * Distinct chimes so your ears know the transition without looking:
+ * 'rest'  — descending two-tone (work done, put the pen down)
+ * 'work'  — ascending three-tone (break over, back to the books)
+ */
+function chime(kind: 'rest' | 'work') {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
-    for (let i = 0; i < times; i++) {
+    const notes = kind === 'rest' ? [659.25, 493.88] : [392, 523.25, 659.25];
+    notes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.value = 660;
+      osc.frequency.value = freq;
       osc.type = 'sine';
-      const t = ctx.currentTime + i * 0.35;
+      const t = ctx.currentTime + i * 0.38;
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
       osc.start(t);
-      osc.stop(t + 0.32);
-    }
+      osc.stop(t + 0.6);
+    });
   } catch {
     /* silent */
   }
 }
+
+const DIM_AFTER_MS = 8000;
 
 export default function FocusTimer({ initialBlock, today, onClose, onLogged }: Props) {
   const [block, setBlock] = useState<BlockId>(initialBlock);
@@ -46,10 +54,68 @@ export default function FocusTimer({ initialBlock, today, onClose, onLogged }: P
   const [remaining, setRemaining] = useState(WORK_MIN * 60);
   const [running, setRunning] = useState(false);
   const [cyclesDone, setCyclesDone] = useState(0);
+  const [dimmed, setDimmed] = useState(false);
   const startedAtRef = useRef<string | null>(null);
   const endAtRef = useRef<number>(0);
   const phaseRef = useRef<Phase>('idle');
+  const dimTimerRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
   phaseRef.current = phase;
+
+  /* ---- face-down mode: auto-dim while running ---- */
+  const scheduleDim = useCallback(() => {
+    if (dimTimerRef.current !== null) window.clearTimeout(dimTimerRef.current);
+    dimTimerRef.current = window.setTimeout(() => setDimmed(true), DIM_AFTER_MS);
+  }, []);
+
+  const wake = useCallback(() => {
+    setDimmed(false);
+    scheduleDim();
+  }, [scheduleDim]);
+
+  useEffect(() => {
+    if (running) {
+      scheduleDim();
+    } else {
+      if (dimTimerRef.current !== null) window.clearTimeout(dimTimerRef.current);
+      setDimmed(false);
+    }
+    return () => {
+      if (dimTimerRef.current !== null) window.clearTimeout(dimTimerRef.current);
+    };
+  }, [running, scheduleDim]);
+
+  /* ---- keep the screen alive during a session ---- */
+  useEffect(() => {
+    const request = async () => {
+      try {
+        const nav = navigator as Navigator & {
+          wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> };
+        };
+        if (running && nav.wakeLock && document.visibilityState === 'visible') {
+          wakeLockRef.current = await nav.wakeLock.request('screen');
+        }
+      } catch {
+        /* unsupported — fine */
+      }
+    };
+    if (running) {
+      request();
+      const onVis = () => {
+        if (document.visibilityState === 'visible') request();
+      };
+      document.addEventListener('visibilitychange', onVis);
+      return () => {
+        document.removeEventListener('visibilitychange', onVis);
+        wakeLockRef.current?.release().catch(() => undefined);
+        wakeLockRef.current = null;
+      };
+    }
+    return () => {
+      wakeLockRef.current?.release().catch(() => undefined);
+      wakeLockRef.current = null;
+    };
+  }, [running]);
 
   const blockDef = BLOCKS.find((b) => b.id === block)!;
 
@@ -90,7 +156,7 @@ export default function FocusTimer({ initialBlock, today, onClose, onLogged }: P
       setRemaining(left);
       if (left === 0) {
         setRunning(false);
-        beep(phaseRef.current === 'work' ? 2 : 1);
+        chime(phaseRef.current === 'work' ? 'rest' : 'work');
         if (phaseRef.current === 'work') {
           logSession(WORK_MIN);
           setCyclesDone((c) => {
@@ -123,10 +189,11 @@ export default function FocusTimer({ initialBlock, today, onClose, onLogged }: P
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      else if (dimmed) wake();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, dimmed, wake]);
 
   const pauseResume = () => {
     if (running) {
@@ -238,9 +305,25 @@ export default function FocusTimer({ initialBlock, today, onClose, onLogged }: P
 
         <p className="timer-note">
           25 min work · 5 min break · every 4th break is 15 min. Completed work intervals are
-          logged to {blockDef.label} automatically.
+          logged to {blockDef.label} automatically. While running, the screen dims to near-black
+          after a few seconds — tap to wake. Chimes differ: falling tones mean rest, rising tones
+          mean back to work.
         </p>
       </div>
+
+      {dimmed && (
+        <button className="dim-screen" onClick={wake} aria-label="Screen dimmed — tap to wake">
+          <span
+            className="dim-dot"
+            style={{ background: phase === 'work' ? `var(${blockDef.colorVar})` : 'var(--color-text-muted)' }}
+          />
+          <span className="dim-time num">
+            {mm}:{ss.toString().padStart(2, '0')}
+          </span>
+          <span className="dim-phase">{phaseLabel}</span>
+          <span className="dim-hint">tap to wake</span>
+        </button>
+      )}
     </div>
   );
 }
