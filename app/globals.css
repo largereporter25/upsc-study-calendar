@@ -1674,3 +1674,29 @@ select {
     font-size: 2.1rem;
   }
 }
+
+/* ---------- mountain palette (Ascent artwork) ---------- */
+:root,
+[data-theme='light'] {
+  --mtn-far: #edebe6;
+  --mtn-mid: #e5e2dc;
+  --mtn-lit: #dcd8d1;
+  --mtn-shadow: #cbc7bf;
+  --mtn-snow: #edf0f3;
+  --mtn-snow-shade: #d8dee4;
+  --mtn-line: #bdb9b1;
+  --mtn-crest: #efece7;
+  --mtn-ridge: #a9a59d;
+}
+
+[data-theme='dark'] {
+  --mtn-far: #1a1a19;
+  --mtn-mid: #1f1f1e;
+  --mtn-lit: #262625;
+  --mtn-shadow: #2e2e2c;
+  --mtn-snow: #53565b;
+  --mtn-snow-shade: #43464a;
+  --mtn-line: #3a3a37;
+  --mtn-crest: #313130;
+  --mtn-ridge: #4d4d49;
+}

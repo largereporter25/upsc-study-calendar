@@ -57,6 +57,35 @@ function pointAt(fraction: number): [number, number] {
   return ROUTE[ROUTE.length - 1];
 }
 
+/** Snow begins here (SVG y, smaller = higher). */
+const SNOWLINE = 154;
+
+/** Distant ranges for atmospheric depth, drawn behind the massif. */
+const FAR_RANGE =
+  '30,300 84,246 132,266 186,214 232,242 292,200 352,230 410,192 470,222 528,238 590,258 654,244 716,264 790,252 872,266 970,300';
+const MID_RANGE =
+  '30,300 104,258 158,276 226,232 288,258 348,238 408,262 468,248 528,266 596,280 668,272 744,282 830,274 970,300';
+
+/** Irregular snowline: a jagged boundary reads as wind-scoured snow. */
+const SNOW_JAG: [number, number][] = [
+  [30, SNOWLINE + 16],
+  [96, SNOWLINE + 6],
+  [150, SNOWLINE + 18],
+  [214, SNOWLINE + 2],
+  [268, SNOWLINE + 14],
+  [330, SNOWLINE - 4],
+  [392, SNOWLINE + 10],
+  [452, SNOWLINE - 2],
+  [514, SNOWLINE + 12],
+  [576, SNOWLINE - 6],
+  [640, SNOWLINE + 8],
+  [704, SNOWLINE - 10],
+  [768, SNOWLINE + 4],
+  [832, SNOWLINE - 12],
+  [900, SNOWLINE - 2],
+  [970, SNOWLINE + 6],
+];
+
 const CAMPS: { f: number; label: string }[] = [
   { f: 0.25, label: 'CAMP I' },
   { f: 0.5, label: 'CAMP II' },
@@ -170,9 +199,23 @@ interface Props {
   csat: Sentinel;
 }
 
+/** Sparse gullies falling from ridge vertices — suggests relief without stripes. */
+const GULLIES = ROUTE.slice(1, -1)
+  .filter((_, i) => i % 2 === 0)
+  .map(([x, y]) => {
+    const drop = Math.min(BASE_Y - 6, y + 92);
+    return `M ${x},${y + 6} C ${x + 8},${y + 34} ${x - 6},${(y + drop) / 2} ${x + 4},${drop}`;
+  });
+
 export default function Ascent({ cumulative, targets, pace, weather, projections, csat }: Props) {
   const routeStr = ROUTE.map((p) => p.join(',')).join(' ');
   const silhouette = `${routeStr} ${ROUTE[ROUTE.length - 1][0]},${BASE_Y} 52,${BASE_Y}`;
+  const snowPath = `M 30,4 L 30,${SNOW_JAG[0][1]} ${SNOW_JAG.map((p) => `L ${p[0]},${p[1]}`).join(' ')} L 970,4 Z`;
+  const snowEdge = `M ${SNOW_JAG.map((p) => `${p[0]},${p[1]}`).join(' L ')}`;
+  const crestBand = `M ${ROUTE.map((p) => `${p[0]},${p[1]}`).join(' L ')} L ${[...ROUTE]
+    .reverse()
+    .map((p) => `${p[0]},${p[1] + 17}`)
+    .join(' L ')} Z`;
 
   const climbers = BLOCKS.map((b) => ({
     block: b,
@@ -214,9 +257,65 @@ export default function Ascent({ cumulative, targets, pace, weather, projections
         {weather.label.toUpperCase()}
       </text>
 
-      {/* mountain silhouette */}
-      <polygon points={silhouette} fill="var(--color-surface-offset)" opacity="0.85" />
-      <polyline points={routeStr} fill="none" stroke="var(--color-border)" strokeWidth="2" strokeLinejoin="round" />
+      {/* ---------- mountain artwork ---------- */}
+      <defs>
+        <clipPath id="massif-clip">
+          <polygon points={silhouette} />
+        </clipPath>
+        <linearGradient id="rock-face" x1="0" y1="0" x2="0.25" y2="1">
+          <stop offset="0%" stopColor="var(--mtn-lit)" />
+          <stop offset="55%" stopColor="var(--mtn-lit)" />
+          <stop offset="100%" stopColor="var(--mtn-shadow)" />
+        </linearGradient>
+        <linearGradient id="valley-haze" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-bg)" stopOpacity="0" />
+          <stop offset="100%" stopColor="var(--color-bg)" stopOpacity="0.8" />
+        </linearGradient>
+      </defs>
+
+      {/* distant range — atmospheric perspective */}
+      <polygon points={FAR_RANGE} fill="var(--mtn-far)" />
+
+      {/* the massif */}
+      <g clipPath="url(#massif-clip)">
+        <polygon points={silhouette} fill="url(#rock-face)" />
+
+        {/* snowfield above the wind-scoured snowline */}
+        <path d={snowPath} fill="var(--mtn-snow)" />
+        <path d={snowEdge} fill="none" stroke="var(--mtn-snow-shade)" strokeWidth="1.6" />
+
+        {/* glacier seams */}
+        <path
+          d="M 560,152 C 620,130 664,144 706,114"
+          fill="none"
+          stroke="var(--mtn-snow-shade)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M 730,108 C 784,92 830,72 888,50"
+          fill="none"
+          stroke="var(--mtn-snow-shade)"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+
+        {/* sunlit crest band just under the ridge */}
+        <path d={crestBand} fill="var(--mtn-crest)" opacity="0.9" />
+
+        {/* valley haze softens the base */}
+        <rect x="30" y={BASE_Y - 54} width="940" height="54" fill="url(#valley-haze)" />
+      </g>
+
+      {/* the ridge itself */}
+      <polyline
+        points={routeStr}
+        fill="none"
+        stroke="var(--mtn-ridge)"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
 
       {/* baseline */}
       <line x1={40} y1={BASE_Y} x2={960} y2={BASE_Y} stroke="var(--color-text)" strokeWidth="1.5" />
