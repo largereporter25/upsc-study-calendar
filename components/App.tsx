@@ -28,7 +28,7 @@ import Ascent from './Ascent';
 import YearView from './YearView';
 import MonthView from './MonthView';
 import DayView from './DayView';
-import FocusTimer from './FocusTimer';
+import FocusTimer, { TimerMode } from './FocusTimer';
 import RevisionQueue from './RevisionQueue';
 import Soundscape from './Soundscape';
 
@@ -77,7 +77,7 @@ export default function App() {
     month: todayDate.getMonth(),
     day: todayDate.getDate(),
   });
-  const [timerBlock, setTimerBlock] = useState<BlockId | null>(null);
+  const [timer, setTimer] = useState<{ block: BlockId; mode: TimerMode } | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
 
   /* ---------- boot ---------- */
@@ -303,8 +303,11 @@ export default function App() {
             {csat.daysSince} days without CSAT — your weekly insurance is{' '}
             {csat.level === 'alert' ? 'fraying. Even 30 minutes re-ropes it.' : 'due this week.'}
           </span>
-          <button className="sentinel-action" onClick={() => setTimerBlock('csat')}>
-            Start CSAT focus
+          <button
+            className="sentinel-action"
+            onClick={() => setTimer({ block: 'csat', mode: 'study' })}
+          >
+            Start CSAT study
           </button>
         </div>
       )}
@@ -418,7 +421,7 @@ export default function App() {
               targets={targets}
               today={today}
               onLogDelta={logDelta}
-              onFocus={(b) => setTimerBlock(b)}
+              onFocus={(b, m) => setTimer({ block: b, mode: m })}
             />
           </div>
         )}
@@ -431,11 +434,13 @@ export default function App() {
         </span>
       </footer>
 
-      {timerBlock && (
+      {timer && (
         <FocusTimer
-          initialBlock={timerBlock}
+          key={`${timer.block}-${timer.mode}`}
+          initialBlock={timer.block}
+          mode={timer.mode}
           today={today}
-          onClose={() => setTimerBlock(null)}
+          onClose={() => setTimer(null)}
           onLogged={creditSession}
         />
       )}

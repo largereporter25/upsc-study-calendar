@@ -2,6 +2,7 @@
 
 import { BLOCKS, BlockId, fmtHours } from '@/lib/blocks';
 import { LogMap, dayTotal } from '@/lib/stats';
+import type { TimerMode } from './FocusTimer';
 
 interface Props {
   dateISO: string;
@@ -9,7 +10,7 @@ interface Props {
   targets: Record<BlockId, number>;
   today: string;
   onLogDelta: (date: string, block: BlockId, delta: number) => void;
-  onFocus: (block: BlockId) => void;
+  onFocus: (block: BlockId, mode: TimerMode) => void;
 }
 
 export default function DayView({ dateISO, logs, targets, today, onLogDelta, onFocus }: Props) {
@@ -76,12 +77,25 @@ export default function DayView({ dateISO, logs, targets, today, onLogDelta, onF
                 >
                   +15
                 </button>
-                {isToday && (
-                  <button className="chip-btn focus-btn" onClick={() => onFocus(b.id)}>
+              </div>
+              {isToday && (
+                <div className="block-timers">
+                  <button
+                    className="chip-btn focus-btn"
+                    onClick={() => onFocus(b.id, 'study')}
+                    aria-label={`Start a Pomodoro study timer for ${b.label}`}
+                  >
+                    Study
+                  </button>
+                  <button
+                    className="chip-btn focus-btn alt"
+                    onClick={() => onFocus(b.id, 'focus')}
+                    aria-label={`Start an open-ended focus timer for ${b.label}`}
+                  >
                     Focus
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </article>
           );
         })}

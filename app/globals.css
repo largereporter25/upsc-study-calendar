@@ -1623,3 +1623,54 @@ select {
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.07);
 }
+
+/* ---------- dual timers: Study (Pomodoro) + Focus (open-ended) ---------- */
+.block-timers {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.chip-btn.focus-btn.alt {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-text);
+}
+
+.chip-btn.focus-btn.alt:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.timer-mode-tag {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+}
+
+.timer-time.long {
+  font-size: 2.6rem;
+}
+
+.focus-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.focus-meta-sep {
+  color: var(--color-text-faint);
+}
+
+@media (max-width: 640px) {
+  .timer-time.long {
+    font-size: 2.1rem;
+  }
+}
